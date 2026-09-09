@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>AR Engine - Rotasi & Zoom</title>
+    <!-- Memuat library A-Frame dan AR.js -->
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <style>
+      body { margin: 0; overflow: hidden; background-color: #000; }
+    </style>
+
+    <!-- SCRIPT 1: Auto-Fit (Menyesuaikan ukuran awal objek) -->
+    <script>
+      AFRAME.registerComponent('auto-fit', {
+        schema: { targetSize: { type: 'number', default: 1.5 } },
+        init: function () {
+          this.el.addEventListener('model-loaded', () => {
+            const obj3D = this.el.getObject3D('mesh');
+            if (!obj3D) return;
+            const box = new THREE.Box3().setFromObject(obj3D);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim === 0) return;
+            const skalaBaru = this.data.targetSize / maxDim;
+            this.el.setAttribute('scale', `${skalaBaru} ${skalaBaru} ${skalaBaru}`);
+          });
+        }
+      });
+    </script>
+
+    <!-- SCRIPT 2: Drag-Rotate (Memutar objek dengan 1 jari) -->
+    <script>
+      AFRAME.registerComponent('drag-rotate', {
+        schema: { speed: { default: 0.015 } },
+        init: function () {
+          this.isDragging = false;
+          this.previousPosition = { x: 0, y: 0 };
+
+          const onPointerDown = (e) => {
+            // Hanya aktif untuk rotasi jika yang menyentuh hanya 1 jari (menghindari bentrok dengan zoom)
+            if (e.touches && e.touches.length > 1) return; 
+            
+            this.isDragging = true;
+            this.previousPosition.x = e.touches ? e.touches[0].clientX : e.clientX;
+            this.previousPosition.y = e.touches ? e.touches[0].clientY : e.clientY;
+          };
+
+          const onPointerMove = (e) => {
+            if (!this.isDragging || (e.touches && e.touches.length > 1)) return;
+            const currentX = e.touches ? e.touches[0].clientX : e.clientX;
+            const currentY = e.touches ? e.touches[0].clientY : e.clientY;
+            const deltaX = currentX - this.previousPosition.x;
+            const deltaY = currentY - this.previousPosition.y;
+
+            this.el.object3D.rotation.y += deltaX * this.data.speed;
+            this.el.object3D.rotation.x += deltaY * this.data.speed;
+
+            this.previousPosition.x = currentX;
+            this.previousPosition.y = currentY;
+          };
+
+          const onPointerUp = () => { this.isDragging = false; };
+
+          window.addEventListener('mousedown', onPointerDown);
+          window.addEventListener('mousemove', onPointerMove);
+          window.addEventListener('mouseup', onPointerUp);
+          window.addEventListener('touchstart', onPointerDown);
+          window.addEventListener('touchmove', onPointerMove);
+          window.addEventListener('touchend', onPointerUp);
+        }
+      });
+    </script>
+
+    <!-- SCRIPT 3: Pinch-Scale (Zoom in & Zoom out dengan 2 jari) -->
+    <script>
+      AFRAME.registerComponent('pinch-scale', {
+        schema: { 
+          // Kecepatan zoom saat jari dilebarkan/dirapatkan
+          speed: { default: 0.005 } 
+        },
+        init: function () {
+          this.isPinching = false;
+          this.initialDistance = 0;
+
+          // Fungsi matematika dasar untuk mencari jarak antara dua titik koordinat jari
+          const getDistance = (touch1, touch2) => {
+            const dx = touch1.clientX - touch2.clientX;
+            const dy = touch1.clientY - touch2.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+          };
+
+          const onTouchStart = (e) => {
+            // Deteksi jika ada tepat 2 jari di layar
+            if (e.touches.length === 2) {
+              this.isPinching = true;
+              this.initialDistance = getDistance(e.touches[0], e.touches[1]);
+            }
+          };
+
+          const onTouchMove = (e) => {
+            if (!this.isPinching || e.touches.length !== 2) return;
+
+            const currentDistance = getDistance(e.touches[0], e.touches[1]);
+            
+            // Hitung selisih pelebaran/penyempitan jari
+            const distanceDelta = currentDistance - this.initialDistance;
+            
+            // Faktor pengali (lebih dari 1 berarti membesar, kurang dari 1 mengecil)
+            const scaleMultiplier = 1 + (distanceDelta * this.data.speed);
+
+            const currentScale = this.el.object3D.scale;
+
+            // Menerapkan skala baru. Math.max(0.1, ...) mencegah objek menjadi hilang (minus atau 0)
+            const newScaleX = Math.max(0.1, currentScale.x * scaleMultiplier);
+            const newScaleY = Math.max(0.1, currentScale.y * scaleMultiplier);
+            const newScaleZ = Math.max(0.1, currentScale.z * scaleMultiplier);
+
+            this.el.object3D.scale.set(newScaleX, newScaleY, newScaleZ);
+
+            // Simpan jarak saat ini untuk referensi gerakan selanjutnya
+            this.initialDistance = currentDistance;
+          };
+
+          const onTouchEnd = (e) => {
+            // Matikan mode pinch jika jari yang menempel di layar tinggal 1 atau 0
+            if (e.touches.length < 2) {
+              this.isPinching = false;
+            }
+          };
+
+          window.addEventListener('touchstart', onTouchStart);
+          window.addEventListener('touchmove', onTouchMove);
+          window.addEventListener('touchend', onTouchEnd);
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;">
+      
+      <a-assets>
+        <a-asset-item id="model-kita" src="/models/sample.glb"></a-asset-item>
+      </a-assets>
+
+      <a-marker type="pattern" url="/models/logo.patt">
+        
+        <!-- 
+          PENERAPAN KETIGA SCRIPT:
+          Kita tambahkan komponen 'pinch-scale' di sini. 
+          Sekarang objek memiliki 3 kekuatan:
+          1. auto-fit -> menyesuaikan ukuran proporsional saat pertama kali muncul.
+          2. drag-rotate -> diputar menggunakan 1 jari.
+          3. pinch-scale -> diperbesar/diperkecil menggunakan 2 jari.
+        -->
+        <a-entity 
+          gltf-model="#model-kita" 
+          auto-fit="targetSize: 1.5"
+          drag-rotate="speed: 0.015"
+          pinch-scale="speed: 0.005"
+          position="0 0 0" 
+          rotation="0 0 0">
+        </a-entity>
+        
+      </a-marker>
+
+      <a-entity camera></a-entity>
+    </a-scene>
+  </body>
+</html>

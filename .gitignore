@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Abaikan aset 3D raksasa agar tidak bikin crash Tailwind/Vite
+public/models/*.glb
+public/models/*.gltf
